@@ -48,9 +48,9 @@ while True:
                 kind = ''
                 if username == 'about':
                     out = '''Hello!  I am a bot that grabs play data for plays logged on board game geek for a specific user.
-    \n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot Octavian plays 2016-1-1 2016-06-30
-    \n\nMy code is available [here](https://github.com/allisontharp/statbot).
-    \n\nI am always interested in suggestions for improvement.  If you have any suggestions, please message me!'''
+\n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot Octavian plays 2016-1-1 2016-06-30
+\n\nMy code is available [here](https://github.com/allisontharp/statbot).
+\n\nI am always interested in suggestions for improvement.  If you have any suggestions, please message me!'''
                 elif username == 'help':
                     out = 'To call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot Octavian plays 2016-1-1 2016-06-30'
                 else:
@@ -93,16 +93,15 @@ while True:
                     
                 
                 
-                #print out
                 comment.reply(out)
                 print "Bot replied to : ", comment.body
                 posts_replied_to.append(comment.id)
-    
-    
+                conn.commit()
+  
                 
-    with open("posts_replied_to.txt", "w") as f:
-        for post_id in posts_replied_to:
-            f.write(post_id + "\n")
+                with open("posts_replied_to.txt", "w") as f:
+                    for post_id in posts_replied_to:
+                        f.write(post_id + "\n")
 
     time.sleep(900)
     
