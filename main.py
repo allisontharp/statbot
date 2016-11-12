@@ -45,6 +45,7 @@ while True:
                     body.pop(0)
                 
                 username = body[0]
+                kind = ''
                 if username == 'about':
                     out = '''Hello!  I am a bot that grabs play data for plays logged on board game geek for a specific user.
     \n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot Octavian plays 2016-1-1 2016-06-30
