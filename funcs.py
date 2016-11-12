@@ -2,7 +2,11 @@ import unicodedata
 from xml.etree import ElementTree as ET
 from math import ceil
 import urllib2
-import time
+import time, datetime
+from operator import itemgetter as ig
+
+
+
 
 def strip_accents(s):
     s = unicode(s)
@@ -32,18 +36,6 @@ class Play(object):
     def __getitem__(self, key):
         return self.__getattribute__(key)
         
-    # def __repr__(self):
-    #     return '{}: {} {} {} {} {}'.format(self.__class__.__name__,
-    #             self.date,
-    #             self.quantity,
-    #             self.duration,
-    #             self.game,
-    #             self.totscore,
-    #             self.avgscore)
-    # 
-    # def __cmp__(self, other):
-    #     if hasattr(other, 'avgscore'):
-    #         return self.avgscore.__cmp__(other.avgscore)
         
 def make_play(date, quantity, duration, location, game, player, totscore, avgscore):
     play = Play(date, quantity, duration, location, game, player, totscore, avgscore)
@@ -95,7 +87,6 @@ def make_game(index, name, quantity, totduration, totscore, userscore, totplayer
 
 def combine_plays(user, games, **kwargs):
     url = 'https://www.boardgamegeek.com/xmlapi2/plays?username='+user
-    newurl = ''
     if len(kwargs) > 0:
         if 'mindate' in kwargs:
             mindate = kwargs['mindate']
@@ -105,87 +96,95 @@ def combine_plays(user, games, **kwargs):
             url += '&maxdate='+maxdate
     doc = ET.parse(urllib2.urlopen(url)).getroot()
 
-    numplays = doc.get('total')
-    allplays = doc.findall('play')
-    numpages = int(ceil(int(numplays)*1.0/100))
-    
-    # print 'NumPlays: ' + str(numplays)
-    # print 'NumPages: ' + str(numpages)
-    
-    for i in range(2,numpages+1):
-        newurl = url + '&page=' + str(i)
-        new = ET.parse(urllib2.urlopen(newurl)).getroot()
-        new = new.findall('play')
-        doc.extend(new)
+    # Check that it is a valid url
+    iserror = doc.get('class')
 
-    
-    
-    allplays = doc.findall('play')
-    
-    cnt = 0
-    
-    plays = []
-    for play in allplays:
-        cnt += 1
-        plyrs = []
-        totscore = 0
-        userscore = 0
+    if iserror is not None:
+        plays = []
+        games = []
+        print 'Error with URL: {url}'.format(url = url)
+    else:
+        numplays = doc.get('total')
+        allplays = doc.findall('play')
+        numpages = int(ceil(int(numplays)*1.0/100))
         
-        loc = play.get('location')
-        dur = play.get('length')
-        quant = play.get('quantity')
-        date = play.get('date')
-        for item in play.findall('item'):
-            game =  item.get('name')
-            game = strip_accents(game)
-            game = game.encode("ascii", "ignore")
-        for players in play.findall('players'): 
-            for player in players.findall('player'):
-                
-                name = player.get('name')
-                score = player.get('score')
-                new = player.get('new')
-                place = 15
-                winner = player.get('win')
-                username = player.get('username')
-                
-                if username == user:
-                    userscore = score
-                
-                plyr = make_player(name, score, place, winner, new, username)
-                
-                plyrs.append(plyr)
-                try:
-                    totscore += int(score)
-                except ValueError:
-                    totscore += 0
-        try:
-            avgscore = totscore*1.0/len(plyrs)
-        except ZeroDivisionError:
-            avgscore = 0
-    
-
-        ply = make_play(date, quant, dur, loc, game, plyrs, totscore, avgscore)
+        # print 'NumPlays: ' + str(numplays)
+        # print 'NumPages: ' + str(numpages)
         
-        plays.append(ply)
-
-        if [s.index for s in games if s.name == game] == []: # the game is not in the games list 
+        for i in range(2,numpages+1):
+            newurl = url + '&page=' + str(i)
+            new = ET.parse(urllib2.urlopen(newurl)).getroot()
+            new = new.findall('play')
+            doc.extend(new)
+    
+        
+        
+        allplays = doc.findall('play')
+        
+        cnt = 0
+        
+        plays = []
+        for play in allplays:
+            cnt += 1
+            plyrs = []
+            totscore = 0
+            userscore = 0
+            
+            loc = play.get('location')
+            dur = play.get('length')
+            quant = play.get('quantity')
+            date = play.get('date')
+            for item in play.findall('item'):
+                game =  item.get('name')
+                game = strip_accents(game)
+                game = game.encode("ascii", "ignore")
+            for players in play.findall('players'): 
+                for player in players.findall('player'):
+                    
+                    name = player.get('name')
+                    score = player.get('score')
+                    new = player.get('new')
+                    place = 15
+                    winner = player.get('win')
+                    username = player.get('username')
+                    
+                    if username == user:
+                        userscore = score
+                    
+                    plyr = make_player(name, score, place, winner, new, username)
+                    
+                    plyrs.append(plyr)
+                    try:
+                        totscore += int(score)
+                    except ValueError:
+                        totscore += 0
             try:
-                ind = max([s.index for s in games]) + 1
-            except ValueError, TypeError: # first game
-                ind = 0
+                avgscore = totscore*1.0/len(plyrs)
+            except ZeroDivisionError:
+                avgscore = 0
+        
+    
+            ply = make_play(date, quant, dur, loc, game, plyrs, totscore, avgscore)
             
-            games.append(make_game(ind, game, quant, dur, totscore, userscore, len(plyrs), [ply]))
-            
-        else: # the game is in the games list
-            
-            ind = [s.index for s in games if s.name == game][0]
-            games[ind].quantity += int(quant)
-            games[ind].totduration += int(dur)
-            games[ind].totscore += float(totscore)
-            games[ind].totplayers += int(len(plyrs))
-            games[ind].plays.append(ply)
-            games[ind].userscore += float(userscore)
+            plays.append(ply)
+    
+            if [s.index for s in games if s.name == game] == []: # the game is not in the games list 
+                try:
+                    ind = max([s.index for s in games]) + 1
+                except ValueError, TypeError: # first game
+                    ind = 0
+                
+                games.append(make_game(ind, game, quant, dur, totscore, userscore, len(plyrs), [ply]))
+                
+            else: # the game is in the games list
+                
+                ind = [s.index for s in games if s.name == game][0]
+                games[ind].quantity += int(quant)
+                games[ind].totduration += int(dur)
+                games[ind].totscore += float(totscore)
+                games[ind].totplayers += int(len(plyrs))
+                games[ind].plays.append(ply)
+                games[ind].userscore += float(userscore)
 
         
         
@@ -249,7 +248,6 @@ def rtable(data, **kwargs):
     tbl += '\n'
     if len(kwargs) > 0:
         if 'lim' in kwargs:
-            print 'limit'
             i = 0
             lim = kwargs['lim']
             for row in data:
@@ -274,32 +272,45 @@ def rtable(data, **kwargs):
 
 def queryplay(username, **kwargs):
     games = []
-    plays, games = combine_plays(username, games, mindate=mindate)
+    mindate = ''
+    maxdate = ''
+    if 'mindate' in kwargs:
+        mindate = kwargs['mindate']
+    if 'maxdate' in kwargs:
+        maxdate = kwargs['maxdate']
+    plays, games = combine_plays(username, games, mindate=mindate, maxdate=maxdate)
     
-    tot_time = sum([int(play.duration) for play in plays])
-    numplays = sum([int(play.quantity) for play in plays])
-    hour = round(tot_time*1.0/60,2)
-    # 
-    # out = '''Congratulations {us}!  You have played a total of {tm} minutes ({hr} hrs) and {num} games since {dt}            
-    # '''.format(us = username, tm = tot_time, num=numplays, dt = mindate )
+    if len(plays) > 0 and len(games) > 0:
     
-    data = [(game.name, game.quantity, round(game.totduration*1.0/game.quantity,2),
-            round(game.totscore*1.0/(game.totplayers),2) if game.totplayers != 0 else 0,
-            round(game.userscore*1.0/game.quantity))        
-           for game in games]
-    
-    sdata = sorted(data, key=ig(1), reverse=True)
-    head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score', 'Your AVG')
-    sdata = [head] + sdata
-    
-    
-    tbl = rtable(sdata, lim=10)
-    
-    out = '''{un}'s play summary from {d}:\n
-**Total Plays:** {totplay} \n
-**Total Time:** {mn} min ({hr} hours) \n\n
+        tot_time = sum([int(play.duration) for play in plays])
+        numplays = sum([int(play.quantity) for play in plays])
+        hour = round(tot_time*1.0/60,2)
+        
+        data = [(game.name, game.quantity, round(game.totduration*1.0/game.quantity,2),
+                round(game.totscore*1.0/(game.totplayers),2) if game.totplayers != 0 else 0,
+                round(game.userscore*1.0/game.quantity))        
+               for game in games]
+        
+        sdata = sorted(data, key=ig(1), reverse=True)
+        head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score', 'Your AVG')
+        sdata = [head] + sdata
+        
+        
+        tbl = rtable(sdata, lim=10)
+        
+        out = '''{un}'s play summary from {d}:\n
+**Total Plays:** {totplay}\n
+**Total Time:** {mn} min ({hr} hours)\n\n
     '''.format(un = username, d = mindate, totplay = numplays, mn = tot_time, hr = hour )
-    out += tbl
-
+        out += tbl
+    
+    else:
+        out = "Oops! I seem to have an error.  Check that the username ({un}) is valid and that it have plays within the date range ({mind} - {maxd}).".format(un = username, mind = mindate, maxd=maxdate)
     return out
 
+def validate_date(txt):
+    if len(txt) > 0:
+        try:
+            datetime.datetime.strptime(txt, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError('Incorrect data format, should be YYYY-MM-DD')
