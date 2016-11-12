@@ -148,6 +148,7 @@ def combine_plays(c, user, games, **kwargs):
                     
                     name = player.get('name')
                     score = player.get('score')
+                    score = 0 if score == '' else score
                     new = player.get('new')
                     place = 15
                     winner = player.get('win')
@@ -184,7 +185,6 @@ def combine_plays(c, user, games, **kwargs):
                     ind = max([s.index for s in games]) + 1
                 except ValueError, TypeError: # first game
                     ind = 0
-                
                 games.append(make_game(ind, game, quant, dur, totscore, userscore, len(plyrs), [ply]))
                 
             else: # the game is in the games list
@@ -396,7 +396,7 @@ def addgame(c, bggid):
             name = name[0]
 
             
-            query = "INSERT INTO games VALUES ({bid}, '{nm}', {yr}, {mn}, {mx}, {isx})".format(bid = bggid, nm = name, yr = year, mn = minplayer, mx = maxplayer, isx = isexpansion)
+            query = 'INSERT INTO games VALUES ({bid}, "{nm}", {yr}, {mn}, {mx}, {isx})'.format(bid = bggid, nm = name, yr = year, mn = minplayer, mx = maxplayer, isx = isexpansion)
 
             sql(c, query)
     except:
@@ -408,7 +408,7 @@ def addplayerfull(c, name, username, userid):
     try:
         playerid = findplayerfull(c, name, userid)
         if playerid == []: # player doesn't exist
-            query = "INSERT INTO player (name, username, userid) VALUES ('{nm}', '{un}', {uid})".format(nm=name, un=username, uid = userid)
+            query = 'INSERT INTO player (name, username, userid) VALUES ("{nm}", "{un}", {uid})'.format(nm=name, un=username, uid = userid)
             sql(c,query)
             query  = "SELECT max(playerid) FROM player"
             playerid = sql(c, query)[0][0]
@@ -419,7 +419,7 @@ def addplayerfull(c, name, username, userid):
 
 def findplayerfull(c, name, userid):
     try:
-        query = "SELECT playerid FROM player WHERE name = '{nm}' AND userid = {uid}".format(nm = name, uid = userid)
+        query = 'SELECT playerid FROM player WHERE name = "{nm}" AND userid = {uid}'.format(nm = name, uid = userid)
         playerid = sql(c, query)
         if playerid != []:
             playerid = playerid[0][0]
@@ -456,7 +456,7 @@ def playerplay(c, playid, playerid, score, win, new):
 
 def findplayerbyusername(c, username):
     try:
-        query = "SELECT playerid FROM player WHERE username = '{usr}'".format(usr = username)
+        query = 'SELECT playerid FROM player WHERE username = "{usr}"'.format(usr = username)
         playerid = sql(c, query)
         
     except:
@@ -477,7 +477,7 @@ def addplayerbyusername(c, username):
             name = firstname + ' ' + lastname
             userid = doc.get('id')
             
-            query = "INSERT INTO player (name, username, userid) VALUES ('{nm}', '{un}', {uid})".format(nm = name, un = username, uid = userid)
+            query = 'INSERT INTO player (name, username, userid) VALUES ("{nm}", "{un}", {uid})'.format(nm = name, un = username, uid = userid)
             sql(c, query)
             playerid = sql(c, "SELECT max(playerid) FROM player")
         return playerid[0][0]
