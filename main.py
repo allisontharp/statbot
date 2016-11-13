@@ -31,7 +31,7 @@ while True:
             body = [i for i in body if i != ''] # remove any spaces
             
             if '/u/stat-bot' in body:
-                print body
+               # print body
 
                 condensed = ' '.join(body)
 
@@ -90,17 +90,17 @@ while True:
                         isfail = 1
                         out = "It looks like we've had one or more errors:\n\n"
                         out += '\n\n'.join(error)
-                        out += "\n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot Octavian plays 2016-01-01 2016-06-30"
+                        out += "\n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot mad4hatter plays 2016-01-01 2016-06-30"
                     
                 
                 print out
-                comment.reply(out)
-                print "Bot replied to : ", comment.body
-                query = '''INSERT INTO comments (commentid, username, comment, isfail, bggusername) VALUES
-("{cid}", "{usr}", "{cmt}", {isfail}, "{bgg}")'''.format(cid = comment.id, usr = comment.author, cmt = comment.body, isfail = isfail, bgg = username)
-                
-                conn.commit()
-                time.sleep(10)
+#                 comment.reply(out)
+#                 print "Bot replied to : ", comment.body
+#                 query = '''INSERT INTO comments (commentid, username, comment, isfail, bggusername) VALUES
+# ("{cid}", "{usr}", "{cmt}", {isfail}, "{bgg}")'''.format(cid = comment.id, usr = comment.author, cmt = comment.body, isfail = isfail, bgg = username)
+#                 
+#                 conn.commit()
+                time.sleep(30)
     
     time.sleep(900)
     
