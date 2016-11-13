@@ -35,10 +35,6 @@ class Play(object):
     def __getitem__(self, key):
         return self.__getattribute__(key)
         
-        
-def make_play(date, quantity, duration, location, game, player, totscore, avgscore):
-    play = Play(date, quantity, duration, location, game, player, totscore, avgscore)
-    return play
 
 class Player(object):
     name = ""
@@ -56,33 +52,33 @@ class Player(object):
         self.new = new
         self.username = username
         
-def make_player(name, score, place, winner, new, username):
-    player = Player(name, score, place, winner, new, username)
-    return player
 
 class Game(object):
     index = int
     name = ''
     quantity = int
     totduration = int
+    avgduration = int
     totscore = float
+    avgscore = float
+    reqavgscore = float
     userscore = float
     totplayers = float
-    plays = []
+
     
-    def __init__(self, index, name, quantity, totduration, totscore, userscore, totplayers, plays):
+    def __init__(self, index, name, quantity, totduration, avgduration, totscore, avgscore, reqavgscore, userscore, totplayers):
         self.index = int(index)
         self.name = name
         self.quantity = int(quantity)
         self.totduration = int(totduration)
+        self.avgduration = float(avgduration)
         self.totscore = float(totscore)
+        self.avgscore = float(avgscore)
+        self.reqavgscore = float(reqavgscore)
         self.userscore = float(userscore)
         self.totplayers = int(totplayers)
-        self.plays = plays
         
-def make_game(index, name, quantity, totduration, totscore, userscore, totplayers, plays):
-    game = Game(index, name, quantity, totduration, totscore, userscore, totplayers, plays)
-    return game
+        
 
 def combine_plays(c, user, games, **kwargs):
     url = 'https://www.boardgamegeek.com/xmlapi2/plays?username='+user
@@ -93,22 +89,19 @@ def combine_plays(c, user, games, **kwargs):
         if 'maxdate' in kwargs:
             maxdate = kwargs['maxdate']
             url += '&maxdate='+maxdate
+    print url
     doc = ET.parse(urllib2.urlopen(url)).getroot()
 
     # Check that it is a valid url
     iserror = doc.get('class')
 
     if iserror is not None:
-        plays = []
-        games = []
         print 'Error with URL: {url}'.format(url = url)
     else:
         numplays = doc.get('total')
         allplays = doc.findall('play')
         numpages = int(ceil(int(numplays)*1.0/100))
         
-        # print 'NumPlays: ' + str(numplays)
-        # print 'NumPages: ' + str(numpages)
         
         for i in range(2,numpages+1):
             newurl = url + '&page=' + str(i)
@@ -116,15 +109,10 @@ def combine_plays(c, user, games, **kwargs):
             new = new.findall('play')
             doc.extend(new)
     
-        
-        
+
         allplays = doc.findall('play')
-        
-        cnt = 0
-        
-        plays = []
+
         for play in allplays:
-            cnt += 1
             plyrs = []
             totscore = 0
             userscore = 0
@@ -139,10 +127,12 @@ def combine_plays(c, user, games, **kwargs):
                 game = strip_accents(game)
                 game = game.encode("ascii", "ignore")
                 bggid = item.get('objectid')
-                
-            addgame(c, bggid)
+
+            addgame(c, bggid)   # Add game to db
             requesterid = addplayerbyusername(c, user) # requester's playerid
-            addplay(c, playid, requesterid, bggid, date, dur, loc)
+
+            addplay(c, playid, requesterid, bggid, date, dur, loc) # add play to db
+            
             for players in play.findall('players'): 
                 for player in players.findall('player'):
                     
@@ -160,47 +150,15 @@ def combine_plays(c, user, games, **kwargs):
                     if username == user:
                         userscore = score
                     
-                    plyr = make_player(name, score, place, winner, new, username)
-                    
-                    plyrs.append(plyr)
                     try:
                         totscore += int(score)
                     except ValueError:
                         totscore += 0
-                    
-                    playerid = addplayerfull(c, name, username, userid)
-                    playerplay(c, playid, playerid, userscore, winner, new)
-            try:
-                avgscore = totscore*1.0/len(plyrs)
-            except ZeroDivisionError:
-                avgscore = 0
-        
-    
-            ply = make_play(date, quant, dur, loc, game, plyrs, totscore, avgscore)
-            
-            plays.append(ply)
-    
-            if [s.index for s in games if s.name == game] == []: # the game is not in the games list 
-                try:
-                    ind = max([s.index for s in games]) + 1
-                except ValueError, TypeError: # first game
-                    ind = 0
-                games.append(make_game(ind, game, quant, dur, totscore, userscore, len(plyrs), [ply]))
-                
-            else: # the game is in the games list
-                
-                ind = [s.index for s in games if s.name == game][0]
-                games[ind].quantity += int(quant)
-                games[ind].totduration += int(dur)
-                games[ind].totscore += float(totscore)
-                games[ind].totplayers += int(len(plyrs))
-                games[ind].plays.append(ply)
-                games[ind].userscore += float(userscore)
 
+                    playerid = addplayerfull(c, name, username, userid, requesterid) # add player to db
+                    playerplay(c, playid, playerid, userscore, winner, new) # link player to play indb
             
-            
-        
-    return plays, games
+
 
 def userscore(user, plays):
     totscore = 0
@@ -282,50 +240,82 @@ def rtable(data, **kwargs):
     
     return tbl
 
-def queryplay(c, username, **kwargs):
+def playsmain(c, username, **kwargs):
     games = []
-    mindate = ''
-    maxdate = ''
+    mindate2 = ''
+    maxdate2 = ''
+
     if 'mindate' in kwargs:
         mindate = kwargs['mindate']
+        if mindate != '':
+            mindate2 = "AND p.date >= '{mindate}'".format(mindate = mindate)
     if 'maxdate' in kwargs:
         maxdate = kwargs['maxdate']
-    plays, games = combine_plays(c, username, games, mindate=mindate, maxdate=maxdate)
+        if maxdate != '':
+            maxdate2 = "AND p.date <= '{maxdate}'".format(maxdate = maxdate)
+    combine_plays(c, username, games, mindate=mindate, maxdate=maxdate)
+    requestid = findplayerbyusername(c, username)
     
-    if len(plays) > 0 and len(games) > 0:
     
-        tot_time = sum([int(play.duration) for play in plays])
-        numplays = sum([int(play.quantity) for play in plays])
-        hour = round(tot_time*1.0/60,2)
-        
-        data = [(game.name, game.quantity, round(game.totduration*1.0/game.quantity,2),
-                round(game.totscore*1.0/(game.totplayers),2) if game.totplayers != 0 else 0,
-                round(game.userscore*1.0/game.quantity))        
-               for game in games]
-        
-        sdata = sorted(data, key=ig(1), reverse=True)
-        head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score For Your Logged Plays', 'Your AVG Score')
-        sdata = [head] + sdata
-        
-        
-        tbl = rtable(sdata, lim=10)
-        
+    query = '''
+SELECT g.name, count(p.playid) as tot, round(sum(playdur.duration)*1.0/count(playdur.playid),2), round(sum(pp.score)*1.0/count(p.playid),2), round(sum(rpp.score)*1.0/count(p.playid),2)
+FROM plays p
+LEFT JOIN games g ON g.bggid = p.bggid
+LEFT JOIN plays playdur ON playdur.playid = p.playid AND playdur.duration > 0
+LEFT JOIN playerplay pp ON pp.playid = p.playid
+LEFT JOIN playerplay rpp ON rpp.playid = p.playid AND rpp.playerid = {reqid}
+WHERE p.playerid = {reqid} {mindate} {maxdate}
+GROUP BY g.bggid ORDER BY tot desc limit 10
+    '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
+    
+    out = sql(c, query)
+
+    head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score For Your Logged Plays', 'Your AVG Score')
+    out = [head] + out
+    
+    tbl = rtable(out, lim=10)
+
+    query = '''
+SELECT count(p.playid), sum(p.duration)
+FROM plays p
+WHERE p.playerid = {reqid} {mindate} {maxdate}
+    '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
+    
+    summary = sql(c,query)
+
+    numplays = summary[0][0]
+    try:
+        tot_time = summary[0][1]
+        hour = tot_time*1.0/60
+    except TypeError:
+        tot_time = 0
+        hour = 0
+
+    if numplays > 0:
         out = '''{un}'s play summary from {d}:\n
 **Total Plays:** {totplay}\n
 **Total Time:** {mn} min ({hr} hours)\n\n
-    '''.format(un = username, d = mindate, totplay = numplays, mn = tot_time, hr = hour )
+        '''.format(un = username, d = mindate, totplay = numplays, mn = tot_time, hr = round(hour,2) )
         out += tbl
-    
     else:
-        out = "Oops! I seem to have an error.  Check that the username ({un}) is valid and that it have plays within the date range ({mind} - {maxd}).".format(un = username, mind = mindate, maxd=maxdate)
+        out = "{usr} has 0 recorded plays on BGG for the requested date range ({mindate} - {maxdate}).".format(usr = username, mindate = mindate, maxdate = maxdate)
+    
+    
     return out
 
 def validate_date(txt):
     if len(txt) > 0:
         try:
-            datetime.datetime.strptime(txt, '%Y-%m-%d')
+            tmp = datetime.datetime.strptime(txt, '%Y-%m-%d')
+            out = tmp.strftime('%Y-%m-%d')
+            
+            
         except ValueError:
             raise ValueError('Incorrect data format, should be YYYY-MM-DD')
+    else:
+        out = ''
+    
+    return out
              
 def sql(c, query):
     c.execute(query)
@@ -347,13 +337,13 @@ def initsql():
     if not c.fetchall(): # if the games table doesn't exist, create it
         print "Creating plays Table"
         c.execute("CREATE TABLE plays(playid INTEGER PRIMARY KEY, playerid INTEGER NOT NULL, bggid INTEGER NOT NULL,date DATETIME NOT NULL,\
-                  duration INTEGER,location varchar(200), datecreated DATETIME DEFAULT current_date)")
+duration INTEGER,location varchar(200), datecreated DATETIME DEFAULT current_date)")
         
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'player'")
     if not c.fetchall(): # if the games table doesn't exist, create it
         print "Creating player Table"
         c.execute("CREATE TABLE player(playerid INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(200),  \
-                  username VARCHAR(200), userid INT)")
+username VARCHAR(200), userid INT, requesterid INT)")
         
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'playerplay'")
     if not c.fetchall(): # if the games table doesn't exist, create it
@@ -363,7 +353,9 @@ def initsql():
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'comments'")
     if not c.fetchall(): # if the games table doesn't exist, create it
         print "Creating comments Table"
-        c.execute("CREATE TABLE comments(commentid VARCHAR(100) PRIMARY KEY, username VARCHAR(200), date DATETIME DEFAULT current_timestamp, comment varchar(10000))")
+        c.execute("CREATE TABLE comments(commentid VARCHAR(100) PRIMARY KEY, username VARCHAR(200), date DATETIME DEFAULT current_timestamp, comment varchar(10000), isfail INTEGER(0,1), bggusername varchar(200))")
+
+    
         
     return c, conn
 
@@ -400,15 +392,15 @@ def addgame(c, bggid):
 
             sql(c, query)
     except:
-        print "Error occurred with adding bgg id {bid} to the db.".format(bid = bggid)
+        print "Error occurred with adding bgg id {bid} to the db (Video game/RPG?).".format(bid = bggid)
         
 
 
-def addplayerfull(c, name, username, userid):
+def addplayerfull(c, name, username, userid, requesterid):
     try:
-        playerid = findplayerfull(c, name, userid)
-        if playerid == []: # player doesn't exist
-            query = 'INSERT INTO player (name, username, userid) VALUES ("{nm}", "{un}", {uid})'.format(nm=name, un=username, uid = userid)
+        playerid = findplayerfull(c, name, userid, requesterid)
+        if playerid == 0 or playerid == []: # player doesn't exist
+            query = 'INSERT INTO player (name, username, userid, requesterid) VALUES ("{nm}", "{un}", {uid}, {rid})'.format(nm=name, un=username, uid = userid, rid = requesterid)
             sql(c,query)
             query  = "SELECT max(playerid) FROM player"
             playerid = sql(c, query)[0][0]
@@ -417,15 +409,40 @@ def addplayerfull(c, name, username, userid):
     except:
         print "Error adding player to player table.  Name: '{nm}'".format(nm = name)
 
-def findplayerfull(c, name, userid):
+def findplayeruserid(c, userid):
     try:
-        query = 'SELECT playerid FROM player WHERE name = "{nm}" AND userid = {uid}'.format(nm = name, uid = userid)
+        query = 'SELECT playerid FROM player WHERE userid = {uid}'.format(nm = name, uid = userid)
+        playerid = sql(c, query)
+        if playerid != 0:
+            playerid = playerid[0][0]
+        else:
+            playerid = 0
+        return playerid
+    except:
+        print "Error finding player (name: '{nm}', userid: {uid})".format(nm = name, uid = userid)
+
+def findplayerfull(c, name, userid, requesterid):
+
+    try: 
+        query = 'SELECT playerid FROM player WHERE userid = {uid}'.format(nm = name, uid = userid)
         playerid = sql(c, query)
         if playerid != []:
             playerid = playerid[0][0]
         else:
-            playerid = []
+            query = 'SELECT playerid FROM player WHERE name = "{nm}" AND requesterid = {uid}'.format(nm = name, uid = requesterid)
+            playerid = sql(c, query)
+            if playerid != []:
+                playerid = playerid[0][0]
+            else:
+                playerid = []
         return playerid
+        
+        
+        
+        
+        
+        
+
     except:
         print "Error finding player (name: '{nm}', userid: {uid})".format(nm = name, uid = userid)
     
@@ -457,10 +474,9 @@ def playerplay(c, playid, playerid, score, win, new):
 def findplayerbyusername(c, username):
     try:
         query = 'SELECT playerid FROM player WHERE username = "{usr}"'.format(usr = username)
-        playerid = sql(c, query)
+        playerid = sql(c, query)[0][0]
         
-    except:
-        print "Error finding player (username: '{usr}').".format(usr = username)
+    except IndexError: #username not in the database
         playerid = 0
     return playerid
 
@@ -468,7 +484,7 @@ def findplayerbyusername(c, username):
 def addplayerbyusername(c, username):
     try:
         playerid = findplayerbyusername(c, username)
-        if playerid == []: # user not in database
+        if playerid == 0: # user not in database
             url = 'https://www.boardgamegeek.com/xmlapi2/user?name={usr}'.format(usr = username)
             doc = ET.parse(urllib2.urlopen(url)).getroot()
             firstname = doc.find('firstname').get('value')
@@ -477,10 +493,8 @@ def addplayerbyusername(c, username):
             name = firstname + ' ' + lastname
             userid = doc.get('id')
             
-            query = 'INSERT INTO player (name, username, userid) VALUES ("{nm}", "{un}", {uid})'.format(nm = name, un = username, uid = userid)
-            sql(c, query)
-            playerid = sql(c, "SELECT max(playerid) FROM player")
-        return playerid[0][0]
+            playerid = addplayerfull(c, name, username, userid, userid)
+        return playerid
     except:
         print "Error adding user to database (username: '{usr}').".format(usr = username)
 
