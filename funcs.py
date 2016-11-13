@@ -11,73 +11,6 @@ def strip_accents(s):
     s = unicode(s)
     return ''.join(c for c in unicodedata.normalize('NFD', s)
                   if unicodedata.category(c) != 'Mn')
-
-class Play(object):
-    date = ''
-    quantity = int
-    duration = int
-    location = ''
-    game = ''
-    player = []
-    totscore = float
-    avgscore = float
-    
-    def __init__(self, date, quantity, duration, location, game, player, totscore, avgscore):
-        self.date = date
-        self.quantity = quantity
-        self.duration = duration
-        self.location = location
-        self.game = game
-        self.player = player
-        self.totscore = totscore
-        self.avgscore = avgscore
-    
-    def __getitem__(self, key):
-        return self.__getattribute__(key)
-        
-
-class Player(object):
-    name = ""
-    score = 0
-    place = 0
-    winner = 0
-    new = 0
-    username = ''
-    
-    def __init__(self, name, score, place, winner, new, username):
-        self.name = name
-        self.score = score
-        self.place = place
-        self.winner = winner
-        self.new = new
-        self.username = username
-        
-
-class Game(object):
-    index = int
-    name = ''
-    quantity = int
-    totduration = int
-    avgduration = int
-    totscore = float
-    avgscore = float
-    reqavgscore = float
-    userscore = float
-    totplayers = float
-
-    
-    def __init__(self, index, name, quantity, totduration, avgduration, totscore, avgscore, reqavgscore, userscore, totplayers):
-        self.index = int(index)
-        self.name = name
-        self.quantity = int(quantity)
-        self.totduration = int(totduration)
-        self.avgduration = float(avgduration)
-        self.totscore = float(totscore)
-        self.avgscore = float(avgscore)
-        self.reqavgscore = float(reqavgscore)
-        self.userscore = float(userscore)
-        self.totplayers = int(totplayers)
-        
         
 
 def combine_plays(c, user, games, **kwargs):
@@ -131,7 +64,7 @@ def combine_plays(c, user, games, **kwargs):
             addgame(c, bggid)   # Add game to db
             requesterid = addplayerbyusername(c, user) # requester's playerid
 
-            addplay(c, playid, requesterid, bggid, date, dur, loc) # add play to db
+            addplay(c, playid, requesterid, bggid, date, dur, loc, quant) # add play to db
             
             for players in play.findall('players'): 
                 for player in players.findall('player'):
@@ -159,23 +92,6 @@ def combine_plays(c, user, games, **kwargs):
                     playerplay(c, playid, playerid, userscore, winner, new) # link player to play indb
             
 
-
-def userscore(user, plays):
-    totscore = 0
-    totplays = 0
-    for play in plays:
-        totplays += 1
-        for i in xrange(len(play.player)):
-            if play.player[i].username.lower() == user.lower():
-                try:
-                    totscore += float(play.player[i].score)
-                except ValueError:
-                    totscore += 0
-    return round(totscore,2), round(totscore*1/totplays,2)
-
-def findind(games, game):
-    ind = [s.index for s in games if s.name == game][0]
-    return ind
 
 def pprint(out, **kwargs):
     numCol = len(out[0])-1
@@ -258,7 +174,7 @@ def playsmain(c, username, **kwargs):
     
     
     query = '''
-SELECT g.name, count(p.playid) as tot, round(sum(playdur.duration)*1.0/count(playdur.playid),2), round(sum(pp.score)*1.0/count(p.playid),2), round(sum(rpp.score)*1.0/count(p.playid),2)
+SELECT g.name, sum(p.quantity) as tot, round(sum(playdur.duration)*1.0/sum(playdur.quantity),2), round(sum(pp.score)*1.0/sum(p.quantity),2), round(sum(rpp.score)*1.0/count(p.playid),2)
 FROM plays p
 LEFT JOIN games g ON g.bggid = p.bggid
 LEFT JOIN plays playdur ON playdur.playid = p.playid AND playdur.duration > 0
@@ -267,7 +183,7 @@ LEFT JOIN playerplay rpp ON rpp.playid = p.playid AND rpp.playerid = {reqid}
 WHERE p.playerid = {reqid} {mindate} {maxdate}
 GROUP BY g.bggid ORDER BY tot desc limit 10
     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
-    
+    print query
     out = sql(c, query)
 
     head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score For Your Logged Plays', 'Your AVG Score')
@@ -276,7 +192,7 @@ GROUP BY g.bggid ORDER BY tot desc limit 10
     tbl = rtable(out, lim=10)
 
     query = '''
-SELECT count(p.playid), sum(p.duration)
+SELECT sum(p.quantity), sum(p.duration)
 FROM plays p
 WHERE p.playerid = {reqid} {mindate} {maxdate}
     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
@@ -292,10 +208,10 @@ WHERE p.playerid = {reqid} {mindate} {maxdate}
         hour = 0
 
     if numplays > 0:
-        out = '''{un}'s play summary from {d}:\n
+        out = '''{un}'s play summary from {d} - {d2}:\n
 **Total Plays:** {totplay}\n
 **Total Time:** {mn} min ({hr} hours)\n\n
-        '''.format(un = username, d = mindate, totplay = numplays, mn = tot_time, hr = round(hour,2) )
+        '''.format(un = username, d = mindate, d2 = maxdate, totplay = numplays, mn = tot_time, hr = round(hour,2) )
         out += tbl
     else:
         out = "{usr} has 0 recorded plays on BGG for the requested date range ({mindate} - {maxdate}).".format(usr = username, mindate = mindate, maxdate = maxdate)
@@ -336,14 +252,12 @@ def initsql():
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plays'")
     if not c.fetchall(): # if the games table doesn't exist, create it
         print "Creating plays Table"
-        c.execute("CREATE TABLE plays(playid INTEGER PRIMARY KEY, playerid INTEGER NOT NULL, bggid INTEGER NOT NULL,date DATETIME NOT NULL,\
-duration INTEGER,location varchar(200), datecreated DATETIME DEFAULT current_date)")
+        c.execute("CREATE TABLE plays(playid INTEGER PRIMARY KEY, playerid INTEGER NOT NULL, bggid INTEGER NOT NULL,date DATETIME NOT NULL, duration INTEGER,location varchar(200), datecreated DATETIME DEFAULT current_date, quantity INT)")
         
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'player'")
     if not c.fetchall(): # if the games table doesn't exist, create it
         print "Creating player Table"
-        c.execute("CREATE TABLE player(playerid INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(200),  \
-username VARCHAR(200), userid INT, requesterid INT)")
+        c.execute("CREATE TABLE player(playerid INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(200), username VARCHAR(200), userid INT, requesterid INT)")
         
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'playerplay'")
     if not c.fetchall(): # if the games table doesn't exist, create it
@@ -355,7 +269,11 @@ username VARCHAR(200), userid INT, requesterid INT)")
         print "Creating comments Table"
         c.execute("CREATE TABLE comments(commentid VARCHAR(100) PRIMARY KEY, username VARCHAR(200), date DATETIME DEFAULT current_timestamp, comment varchar(10000), isfail INTEGER(0,1), bggusername varchar(200))")
 
-    
+    c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'collection'")
+    if not c.fetchall(): # if the games table doesn't exist, create it
+        print "Creating comments Table"
+        c.execute("CREATE TABLE collection(userid INT NOT NULL, bggid INT NOT NULL, date DATETIME DEFAULT current_timestamp, PRIMARY KEY(userid, bggid))")
+
         
     return c, conn
 
@@ -447,14 +365,20 @@ def findplayerfull(c, name, userid, requesterid):
         print "Error finding player (name: '{nm}', userid: {uid})".format(nm = name, uid = userid)
     
 
-def addplay(c, playid, playerid, bggid, date, duration, location):
+def addplay(c, playid, playerid, bggid, date, duration, location, quantity):
     try:
-        query = "SELECT * FROM plays WHERE playid = {play}".format(play = playid)
+        query = "SELECT quantity,playid FROM plays WHERE playid = {play}".format(play = playid)
         out = sql(c, query)
         if out == []:
-            query = 'INSERT INTO plays (playid, playerid, bggid, date, duration, location) VALUES ({playid}, {playerid}, {bid}, "{dt}", {dur}, "{loc}")'.format(playid = playid, playerid = playerid, bid = bggid, dt = date, dur = duration, loc = location)
+            query = 'INSERT INTO plays (playid, playerid, bggid, date, duration, location, quantity) VALUES ({playid}, {playerid}, {bid}, "{dt}", {dur}, "{loc}", {quant})'.format(
+                playid = playid, playerid = playerid, bid = bggid, dt = date, dur = duration, loc = location, quant = quantity)
             sql(c, query)
-            playid = "SELECT max(playid) FROM plays"
+            print quantity
+            query = "SELECT max(playid) FROM plays"
+            playid = sql(c, query)
+        elif out[0][0] != quantity:
+            query = 'UPDATE plays SET quantity = {quant} WHERE playid = {playid}'.format(quant = quantity, playid = out[0][1])
+            sql(c, query)
     except:
         print "Error adding play to play table (playid: {playid} ).".format(playid = playid)
         playid = 0
@@ -473,7 +397,7 @@ def playerplay(c, playid, playerid, score, win, new):
 
 def findplayerbyusername(c, username):
     try:
-        query = 'SELECT playerid FROM player WHERE username = "{usr}"'.format(usr = username)
+        query = 'SELECT playerid FROM player WHERE username like "{usr}"'.format(usr = username)
         playerid = sql(c, query)[0][0]
         
     except IndexError: #username not in the database
@@ -501,7 +425,56 @@ def addplayerbyusername(c, username):
 
 
 
+####### Collection Functions
+def collectionmain(c, username, **kwargs):
+    userid = findplayerbyusername(c, username)
 
+    # url = 'https://www.boardgamegeek.com/xmlapi2/collection?username=' + username
+    # try:
+    #     rsp = urllib2.urlopen(url)
+    # except urllib2.HTTPError:
+    #     # 202 error likely, wait and try again:
+    #     time.wait(30)
+    #     rsp = urllib2.urlopen(url)
+    #     
+    # doc = ET.parse(rsp).getroot()
+    # print 'afterdoc'
+    # numgames = doc.get('totalitems')
+    # 
+    # allgames = doc.findall('item')
+    # 
+    # for game in allgames:
+    #     bggid = game.get('objectid')
+    #     # Check to see if it is in the db:
+    #     query = "SELECT bggid FROM collection WHERE userid = {uid} AND bggid = {bggid}".format(uid = userid, bggid = bggid)
+    #     out = sql(c,query)
+    #     
+    #     if out == []:
+    #         query = "INSERT INTO collection (userid, bggid) VALUES ({uid}, {bggid})".format(uid = userid, bggid = bggid)
+    #         sql(c,query)
+        
+    top = 100    
+        
+    query = '''
+ATTACH DATABASE 'bgcol.sqlite' AS bgcol;'''
+    
+    sql(c, query)
+    
+    query = '''
+SELECT g.bggid
+FROM games g
+INNER JOIN bgcol.collection c ON c.bggid = g.bggid
+INNER JOIN collection col ON col.bggid = g.bggid
+WHERE c.rank >=1 AND c.rank <= {tp};'''.format(tp = top)
+        
+        
+    gms = sql(c, query)
+    gms = [i[0] for i in gms]
+    
+    print gms
+        
+    return gms
+    
 
 
 
