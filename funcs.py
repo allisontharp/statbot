@@ -170,20 +170,34 @@ def playsmain(c, username, **kwargs):
         if maxdate != '':
             maxdate2 = "AND p.date <= '{maxdate}'".format(maxdate = maxdate)
     combine_plays(c, username, games, mindate=mindate, maxdate=maxdate)
+
     requestid = findplayerbyusername(c, username)
     
+
+    sql(c, "DROP TABLE IF EXISTS tempplays;")
+    sql(c, "CREATE TEMP TABLE IF NOT EXISTS tempplays(bggid INTGER, avgscore FLOAT);")
+
+    sql(c, '''
+INSERT INTO tempplays
+SELECT p.bggid, round(sum(pp.score)*1.0/sum(p.quantity),2) as avgscore
+FROM playerplay pp
+INNER JOIN plays p ON p.playid = pp.playid
+WHERE p.playerid = {reqid} {mindate} {maxdate}
+GROUP BY p.bggid
+    
+    '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2))
     
     query = '''
-SELECT g.name, sum(p.quantity) as tot, round(sum(playdur.duration)*1.0/sum(playdur.quantity),2), round(sum(pp.score)*1.0/sum(p.quantity),2), round(sum(rpp.score)*1.0/count(p.playid),2)
+SELECT g.name, sum(p.quantity) as tot, round(sum(playdur.duration)*1.0/sum(playdur.quantity),2), tempplays.avgscore, round(sum(rpp.score)*1.0/count(p.playid),2)
 FROM plays p
 LEFT JOIN games g ON g.bggid = p.bggid
 LEFT JOIN plays playdur ON playdur.playid = p.playid AND playdur.duration > 0
-LEFT JOIN playerplay pp ON pp.playid = p.playid
+INNER JOIN tempplays ON tempplays.bggid = p.bggid
 LEFT JOIN playerplay rpp ON rpp.playid = p.playid AND rpp.playerid = {reqid}
 WHERE p.playerid = {reqid} {mindate} {maxdate}
 GROUP BY g.bggid ORDER BY tot desc limit 10
     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
-    print query
+
     out = sql(c, query)
 
     head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score For Your Logged Plays', 'Your AVG Score')
@@ -241,7 +255,7 @@ def sql(c, query):
              
 def initsql():
     db_loc = 'sqlbot.sqlite'
-    conn = sqlite3.connect(db_loc)
+    conn = sqlite3.Connection(db_loc)
     c = conn.cursor()
     
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'games'")
@@ -373,7 +387,6 @@ def addplay(c, playid, playerid, bggid, date, duration, location, quantity):
             query = 'INSERT INTO plays (playid, playerid, bggid, date, duration, location, quantity) VALUES ({playid}, {playerid}, {bid}, "{dt}", {dur}, "{loc}", {quant})'.format(
                 playid = playid, playerid = playerid, bid = bggid, dt = date, dur = duration, loc = location, quant = quantity)
             sql(c, query)
-            print quantity
             query = "SELECT max(playid) FROM plays"
             playid = sql(c, query)
         elif out[0][0] != quantity:
@@ -461,7 +474,7 @@ ATTACH DATABASE 'bgcol.sqlite' AS bgcol;'''
     sql(c, query)
     
     query = '''
-SELECT g.bggid
+SELECT distinct g.bggid
 FROM games g
 INNER JOIN bgcol.collection c ON c.bggid = g.bggid
 INNER JOIN collection col ON col.bggid = g.bggid
@@ -471,9 +484,27 @@ WHERE c.rank >=1 AND c.rank <= {tp};'''.format(tp = top)
     gms = sql(c, query)
     gms = [i[0] for i in gms]
     
-    print gms
+    out = "You have {num} top {tp} games in your collection.".format(num = len(gms), tp = top)
+    
+    query = '''
+SELECT count(col.bggid)-- g.name, count(col.bggid)
+FROM games g
+INNER JOIN bgcol.collection c on c.bggid = g.bggid
+inner join collection col ON col.bggid = g.bggid AND col.userid = {uid}
+where c.rank >= 1
+group by c.date
+--order by c.date desc, c.rank desc limit 1
+    '''.format(uid = userid)
+    worst = sql(c, query)
+    
+    print worst
+    
+    worst = str(worst[0][0])
+    
+    out = out + '\nYour worst ranked game is {gm}.'.format(gm = worst)
+ 
         
-    return gms
+    return out
     
 
 
