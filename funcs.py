@@ -72,6 +72,11 @@ def combine_plays(c, user, games, **kwargs):
                     name = player.get('name')
                     score = player.get('score')
                     score = 0 if score == '' else score
+                    try:
+                        score = score.replace(' ','')
+                    except AttributeError:
+                        score = score
+                    score = float(score)
                     new = player.get('new')
                     place = 15
                     winner = player.get('win')
@@ -82,6 +87,8 @@ def combine_plays(c, user, games, **kwargs):
         
                     if username == user:
                         userscore = score
+                        if playid == 20719668:
+                            print userscore
                     
                     try:
                         totscore += int(score)
@@ -89,7 +96,7 @@ def combine_plays(c, user, games, **kwargs):
                         totscore += 0
 
                     playerid = addplayerfull(c, name, username, userid, requesterid) # add player to db
-                    playerplay(c, playid, playerid, userscore, winner, new) # link player to play indb
+                    playerplay(c, playid, playerid, score, winner, new) # link player to play indb
             
 
 
@@ -175,35 +182,114 @@ def playsmain(c, username, **kwargs):
     
 
     sql(c, "DROP TABLE IF EXISTS tempplays;")
-    sql(c, "CREATE TEMP TABLE IF NOT EXISTS tempplays(bggid INTGER, avgscore FLOAT);")
+    sql(c, "CREATE TEMP TABLE IF NOT EXISTS tempplays(bggid INTGER, avgscore FLOAT, totscore FLOAT, numplays INT);")
+    
+    
+    sql(c, "DROP TABLE IF EXISTS tempreqplays;")
+    sql(c, "CREATE TEMP TABLE IF NOT EXISTS tempreqplays(bggid INTGER, reqavgscore FLOAT, totscore FLOAT, numplays INT);")
 
-    sql(c, '''
-INSERT INTO tempplays
-SELECT p.bggid, round(sum(pp.score)*1.0/sum(p.quantity),2) as avgscore
+
+#     a = sql(c, '''
+# SELECT g.name, pp.score, rpp.score
+# FROM playerplay pp
+# INNER JOIN plays p ON p.playid = pp.playid
+# INNER JOIN playerplay rpp ON rpp.playid = pp.playid AND rpp.playerid = {reqid} AND rpp.score > 0
+# inner join games g on g.bggid = p.bggid
+# WHERE p.playerid = {reqid} {mindate} {maxdate}
+# order by g.name
+#     
+#     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2))
+#     
+#     pprint(a)
+
+# To Do: Fix this so that it considers games where requester scored 0
+    
+    query = '''SELECT g.name, round(sum(pp.score)*1.0/sum(p.quantity),2), sum(pp.score), sum(p.quantity)
 FROM playerplay pp
 INNER JOIN plays p ON p.playid = pp.playid
-WHERE p.playerid = {reqid} {mindate} {maxdate}
+INNER JOIN games g ON g.bggid = p.bggid
+WHERE pp.playerid = {reqid} AND pp.score > 0 {mindate} {maxdate}
+GROUP BY p.bggid
+        '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
+        
+  #  pprint(sql(c,query))
+    print '-----'
+    
+    sql(c, '''
+INSERT INTO tempreqplays
+SELECT p.bggid, round(sum(pp.score)*1.0/sum(p.quantity),2), sum(pp.score), sum(p.quantity)
+FROM playerplay pp
+INNER JOIN plays p ON p.playid = pp.playid
+WHERE pp.playerid = {reqid} AND pp.score > 0 {mindate} {maxdate}
+GROUP BY p.bggid
+        '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2))
+   
+   
+    '''
+    --SELECT p.bggid, round(sum(pp.score)*1.0/sum(p.quantity),2) as avgscore, sum(pp.score), sum(p.quantity)
+    --FROM playerplay pp
+    --INNER JOIN plays p ON p.playid = pp.playid
+    --WHERE p.playerid = {reqid} {mindate} {maxdate}
+    --GROUP BY p.bggid, p.playid
+    '''
+
+    query = '''SELECT g.name, round(sum(pp.score)*1.0/sum(p.quantity),2), sum(pp.score), sum(p.quantity)
+FROM playerplay pp
+INNER JOIN plays p ON p.playid = pp.playid
+INNER JOIN games g ON g.bggid = p.bggid
+WHERE p.playerid = {reqid} AND pp.score > 0 {mindate} {maxdate}
+GROUP BY p.bggid
+    
+    '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
+#    pprint(sql(c, query))
+    
+    sql(c, '''
+INSERT INTO tempplays
+
+SELECT p.bggid, round(sum(pp.score)*1.0/sum(p.quantity),2), sum(pp.score), sum(p.quantity)
+FROM playerplay pp
+INNER JOIN plays p ON p.playid = pp.playid
+WHERE p.playerid = {reqid} AND pp.score > 0 {mindate} {maxdate}
 GROUP BY p.bggid
     
     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2))
     
+
+# To Do: Fix average req score to ignore 0    
     query = '''
-SELECT g.name, sum(p.quantity) as tot, round(sum(playdur.duration)*1.0/sum(playdur.quantity),2), tempplays.avgscore, round(sum(rpp.score)*1.0/count(p.playid),2)
+SELECT g.name, sum(p.quantity) as tot, round(sum(playdur.duration)*1.0/sum(playdur.quantity),2), tempplays.avgscore, tempreqplays.reqavgscore
 FROM plays p
 LEFT JOIN games g ON g.bggid = p.bggid
 LEFT JOIN plays playdur ON playdur.playid = p.playid AND playdur.duration > 0
 INNER JOIN tempplays ON tempplays.bggid = p.bggid
-LEFT JOIN playerplay rpp ON rpp.playid = p.playid AND rpp.playerid = {reqid}
+INNER JOIN tempreqplays ON tempreqplays.bggid = p.bggid
 WHERE p.playerid = {reqid} {mindate} {maxdate}
-GROUP BY g.bggid ORDER BY tot desc limit 10
+GROUP BY g.bggid
+ORDER BY tot desc limit 10
     '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
 
     out = sql(c, query)
+    
+
 
     head = ('Game', 'Total Plays', 'AVG Minutes', 'AVG Score For Your Logged Plays', 'Your AVG Score')
     out = [head] + out
     
+    
+    
     tbl = rtable(out, lim=10)
+    
+    
+    query = '''
+    SELECT g.name, pp.* FROM playerplay pp
+    INNER JOIN plays p ON p.playid = pp.playid
+    INNER JOIN games g ON g.bggid = p.bggid
+    WHERE p.playerid = {reqid}
+    ORDER BY g.name
+    
+    '''.format(reqid = requestid, mindate = mindate2, maxdate = maxdate2)
+    
+    #pprint(sql(c,query))
 
     query = '''
 SELECT sum(p.quantity), sum(p.duration)
@@ -329,6 +415,7 @@ def addgame(c, bggid):
 
 
 def addplayerfull(c, name, username, userid, requesterid):
+
     try:
         playerid = findplayerfull(c, name, userid, requesterid)
         if playerid == 0 or playerid == []: # player doesn't exist
@@ -399,6 +486,7 @@ def addplay(c, playid, playerid, bggid, date, duration, location, quantity):
 
 
 def playerplay(c, playid, playerid, score, win, new):
+
     try:
         query = "SELECT playid, playerid FROM playerplay WHERE playid = {play} AND playerid = {player}".format(play = playid, player = playerid)
         out = sql(c, query)
@@ -406,6 +494,7 @@ def playerplay(c, playid, playerid, score, win, new):
             query = "INSERT INTO playerplay VALUES ({play}, {player}, {score}, {win}, {new})".format(play = playid, player=playerid, score = score, win = win, new = new)
             sql(c, query)
     except:
+        print query
         print "Error adding playerplay entry.  Playid: {play}, Playerid: {player}".format(play = playid, player = playerid)
 
 def findplayerbyusername(c, username):
