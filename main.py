@@ -83,6 +83,8 @@ while True:
                         isfail = 0
                         if kind == 'plays':     
                             out = playsmain(c, username, mindate = mindate, maxdate = maxdate)
+                        elif kind == 'collection':
+                            out = collectionmain(c, username, conn = conn)
                         else:
                             print "Someone mentioned /u/stat-bot, but didn't call it correctly"
                             out = "You didn't mention what kind of stats you want, or I am having trouble understanding you.  Right now, I only know plays.  Please use '/u/stat-bot help' if you need help."
@@ -90,16 +92,16 @@ while True:
                         isfail = 1
                         out = "It looks like we've had one or more errors:\n\n"
                         out += '\n\n'.join(error)
-                        out += "\n\nTo call me correctly, use the format:\n\n/u/stat-bot your_username plays startdate enddate \n\nex: /u/stat-bot mad4hatter plays 2016-01-01 2016-06-30"
+                        out += "\n\nTo call me correctly, use the format:\n\nyour_username plays startdate enddate \n\nex: /u/stat-bot mad4hatter plays 2016-01-01 2016-06-30"
                     
                 
-                print out
-#                 comment.reply(out)
-#                 print "Bot replied to : ", comment.body
-#                 query = '''INSERT INTO comments (commentid, username, comment, isfail, bggusername) VALUES
-# ("{cid}", "{usr}", "{cmt}", {isfail}, "{bgg}")'''.format(cid = comment.id, usr = comment.author, cmt = comment.body, isfail = isfail, bgg = username)
-#                 
-#                 conn.commit()
+                #print out
+                comment.reply(out)
+                print "Bot replied to : ", comment.body
+                query = '''INSERT INTO comments (commentid, username, comment, isfail, bggusername) VALUES
+("{cid}", "{usr}", "{cmt}", {isfail}, "{bgg}")'''.format(cid = comment.id, usr = comment.author, cmt = comment.body, isfail = isfail, bgg = username)
+                
+                conn.commit()
                 time.sleep(30)
     
     time.sleep(900)
