@@ -553,10 +553,8 @@ def getcollection(c, username):
             # Check to see if it is in the db:
             query = "SELECT bggid FROM collection WHERE userid = {uid} AND bggid = {bggid}".format(uid = userid, bggid = bggid)
             out = sql(c,query)
-            print out
             
             if out == []:
-                print 'insert'
                 query = "INSERT INTO collection (userid, bggid) VALUES ({uid}, {bggid})".format(uid = userid, bggid = bggid)
                 sql(c,query)
 
@@ -592,10 +590,10 @@ SELECT m.name, count(usercol.bggid) as cnt
 FROM bgcol.mechanics m
 INNER JOIN bgcol.gamemech gm ON m.mechid = gm.mechid
 INNER JOIN collection usercol ON usercol.bggid = gm.bggid
-INNER JOIN bgcol.collection c ON c.bggid = gm.bggid
-GROUP BY c.date, m.name
-ORDER BY c.date desc , cnt desc limit 10
-    '''.format()
+WHERE usercol.userid = {userid}
+GROUP BY m.name
+ORDER BY cnt desc limit 10
+    '''.format(userid = userid)
     
     out = sql(c, query)
     
@@ -617,10 +615,10 @@ SELECT cat.name, count(usercol.bggid) as cnt
 FROM bgcol.categories cat
 INNER JOIN bgcol.catgame cg ON cg.catid = cat.catid
 INNER JOIN collection usercol ON usercol.bggid = cg.bggid
-INNER JOIN bgcol.collection c ON c.bggid = cg.bggid
-GROUP BY c.date, cat.name
-ORDER BY c.date desc, cnt desc limit 10
-    '''.format()
+WHERE usercol.userid = {userid}
+GROUP BY cat.name
+ORDER BY cnt desc limit 10
+    '''.format(userid = userid)
     
     out = sql(c, query)
     
@@ -661,15 +659,20 @@ def collectionmain(c, username, **kwargs):
     userid = findplayerbyusername(c, username)
     if 'conn' in kwargs:
         conn = kwargs['conn']
-    #getcollection(c, username)
-    # # # conn.commit()
+    getcollection(c, username)
+    conn.commit()
     top = 100    
         
     [numgames, tot] = usertopgames(c, userid, top)
     
-    out = "{un}'s collection summary: ".format(un = username)
+    out = "{un}'s collection summary: \n\n".format(un = username)
+    if tot == None or tot == 0:
+        perc = 0
+        tot = 0
+    else:
+        perc = round(numgames*100.0/tot,2)
     
-    out += "-You have {num} top {tp} games in your collection.\n\n-{perc}% of your collection is in the top {tp}.".format(num = numgames, tp = top, perc = round(numgames*100.0/tot,2))
+    out += "-You have {num} top {tp} games in your collection.\n\n-{perc}% of your collection is in the top {tp}.".format(num = numgames, tp = top, perc = perc)
 
     # Worst Game
     worst = userworstranked(c, userid)
@@ -699,5 +702,14 @@ def collectionmain(c, username, **kwargs):
     return out
     
 
+def validateusername(username):
+    url = 'https://www.boardgamegeek.com/xmlapi2/user?name={usr}'.format(usr = username)
+    doc = ET.parse(urllib2.urlopen(url)).getroot()
 
+    userid = doc.get('id')
+    if userid != '':
+        return True
+    else:
+        return False
+    
 
